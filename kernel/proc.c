@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "uproc.h"
 
 struct cpu cpus[NCPU];
 
@@ -167,6 +168,7 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->tracemask = 0;
   p->state = UNUSED;
 }
 
@@ -288,6 +290,9 @@ kfork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+
+  // child inherits the parent's trace mask.
+  np->tracemask = p->tracemask;
 
   pid = np->pid;
 
@@ -700,4 +705,60 @@ procdump(void)
     printk("%d %s %s", p->pid, state, p->name);
     printk("\n");
   }
+}
+
+// Count processes whose state is not UNUSED.
+uint64
+nproc(void)
+{
+  struct proc *p;
+  uint64 n = 0;
+
+  for (p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if (p->state != UNUSED)
+      n++;
+    release(&p->lock);
+  }
+  return n;
+}
+
+// Copy a struct uproc for each in-use process, in table order, to the
+// user array at addr, stopping after max entries.
+// Returns the number copied, or -1 if max < 0 or a copy fails.
+int
+getprocs(uint64 addr, int max)
+{
+  struct proc *p;
+  struct proc *me = myproc();
+  struct uproc u;
+  int n = 0;
+
+  if (max < 0)
+    return -1;
+
+  for (p = proc; p < &proc[NPROC] && n < max; p++) {
+    // wait_lock protects p->parent and must come before any p->lock.
+    acquire(&wait_lock);
+    acquire(&p->lock);
+    if (p->state == UNUSED) {
+      release(&p->lock);
+      release(&wait_lock);
+      continue;
+    }
+    u.pid = p->pid;
+    u.ppid = p->parent ? p->parent->pid : 0;
+    u.state = p->state;
+    u.sz = p->sz;
+    safestrcpy(u.name, p->name, sizeof(u.name));
+    release(&p->lock);
+    release(&wait_lock);
+
+    // copyout may fault in user pages, so no locks are held here.
+    if (copyout(me->pagetable, me->sz, addr + n * sizeof(u), (char *)&u,
+                sizeof(u)) < 0)
+      return -1;
+    n++;
+  }
+  return n;
 }
