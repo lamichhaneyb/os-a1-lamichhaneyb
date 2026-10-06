@@ -5,7 +5,11 @@
 #define WORDBUF 2048
 #define MAXWORD 512
 
-static char *args[MAXARG + 1]; // command, fixed args, then input words
+// Most arguments one run may have, counting cmd. The kernel's exec
+// keeps argv in MAXARG slots including the terminating 0.
+#define MAXARGS (MAXARG - 1)
+
+static char *args[MAXARG];     // command, fixed args, then input words
 static int nfixed;             // count of command + fixed args
 static int nargs;              // current total count in args
 static char words[WORDBUF];    // storage for input words of one run
@@ -92,7 +96,7 @@ main(int argc, char *argv[])
   }
   if (i >= argc)
     usage();
-  if (argc - i > MAXARG) {
+  if (argc - i > MAXARGS) {
     fprintf(2, "xargs: too many arguments\n");
     exit(1);
   }
@@ -102,7 +106,7 @@ main(int argc, char *argv[])
   nargs = nfixed;
 
   // Words per run: N with -n, otherwise as many as fit.
-  limit = MAXARG - nfixed;
+  limit = MAXARGS - nfixed;
   if (n > 0 && n < limit)
     limit = n;
   if (limit < 1) {

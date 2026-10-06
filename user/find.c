@@ -15,6 +15,13 @@ static char path[4096];
 static char *pattern;
 static int want = WANT_ANY;
 
+static void
+die(char *msg, char *arg)
+{
+  fprintf(2, "find: %s %s\n", msg, arg);
+  exit(1);
+}
+
 // Return 1 if name matches pat, where '*' matches any sequence of
 // characters (including an empty one) and everything else is literal.
 int
@@ -42,19 +49,15 @@ find(int len)
   struct dirent de, *ents;
   char name[DIRSIZ + 1];
 
-  if ((fd = open(".", O_RDONLY)) < 0) {
-    fprintf(2, "find: cannot open %s\n", path);
-    return;
-  }
-  if (fstat(fd, &st) < 0) {
-    fprintf(2, "find: cannot stat %s\n", path);
-    close(fd);
-    return;
-  }
+  if ((fd = open(".", O_RDONLY)) < 0)
+    die("cannot open", path);
+  if (fstat(fd, &st) < 0)
+    die("cannot stat", path);
 
   // Read the whole directory first so no fd stays open while recursing.
   cap = st.size / sizeof(de) + 1;
-  ents = malloc(cap * sizeof(de));
+  if ((ents = malloc(cap * sizeof(de))) == 0)
+    die("out of memory at", path);
   n = 0;
   while (n < cap && read(fd, &de, sizeof(de)) == sizeof(de)) {
     if (de.inum == 0)
@@ -70,10 +73,8 @@ find(int len)
       continue;
 
     nlen = strlen(name);
-    if (len + 1 + nlen + 1 > sizeof(path)) {
-      fprintf(2, "find: path too long\n");
-      continue;
-    }
+    if (len + 1 + nlen + 1 > sizeof(path))
+      die("path too long at", path);
     if (len > 0 && path[len - 1] == '/') {
       memmove(path + len, name, nlen + 1);
       nlen += len;
@@ -83,11 +84,8 @@ find(int len)
       nlen += len + 1;
     }
 
-    if (stat(name, &st) < 0) {
-      fprintf(2, "find: cannot stat %s\n", path);
-      path[len] = 0;
-      continue;
-    }
+    if (stat(name, &st) < 0)
+      die("cannot stat", path);
 
     if (match(pattern, name)) {
       if (want == WANT_ANY ||
@@ -97,15 +95,11 @@ find(int len)
     }
 
     if (st.type == T_DIR) {
-      if (chdir(name) < 0) {
-        fprintf(2, "find: cannot open %s\n", path);
-      } else {
-        find(nlen);
-        if (chdir("..") < 0) {
-          fprintf(2, "find: cannot return from %s\n", path);
-          exit(1);
-        }
-      }
+      if (chdir(name) < 0)
+        die("cannot open", path);
+      find(nlen);
+      if (chdir("..") < 0)
+        die("cannot return from", path);
     }
     path[len] = 0;
   }

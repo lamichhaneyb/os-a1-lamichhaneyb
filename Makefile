@@ -157,6 +157,7 @@ UPROGS=\
 	$U/_sysinfotest\
 	$U/_getprocstest\
 	$U/_tracetest\
+	$U/_a1test\
 	$U/_ps\
 
 fs.img: mkfs/mkfs README $(UPROGS)
